@@ -2,8 +2,8 @@ import os
 from PIL import Image
 
 # 源数据文件夹和目标文件夹
-SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data'))
-DST_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data_processed'))
+SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/raw'))
+DST_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/grey'))
 
 def process_image(src_path, dst_path):
     try:
