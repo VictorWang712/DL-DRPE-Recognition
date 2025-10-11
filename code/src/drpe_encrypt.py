@@ -30,7 +30,7 @@ def save_visualization(enc_img, save_path_prefix):
     # 相位归一化到[0,255]保存为PNG
     phase = np.angle(enc_img)
     phase = ((phase + np.pi) / (2 * np.pi) * 255).astype(np.uint8)
-    Image.fromarray(phase).save(save_path_prefix + '_phase.png')
+    # Image.fromarray(phase).save(save_path_prefix + '_phase.png')
 
 def load_image(img_path):
     img = Image.open(img_path).convert('L')
@@ -77,7 +77,7 @@ def main(
             dst_img_path = os.path.join(dst_cls_dir, fname + '.npy')
             img = load_image(src_img_path)
             enc_img = drpe_encrypt(img, phase1, phase2)
-            save_encrypted_image(enc_img, dst_img_path)
+            # save_encrypted_image(enc_img, dst_img_path)
 
             # 保存可视化图片
             save_path_prefix = os.path.join(dst_cls_dir, fname)
