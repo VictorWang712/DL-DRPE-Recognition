@@ -4,7 +4,8 @@
 
 ```bash
 cd data
-unzip raw.zip
+cat raw.tar.gz.part_* > raw.tar.gz
+tar -xvzf raw.tar.gz
 ```
 
 ## Double Random Phase Encoding
