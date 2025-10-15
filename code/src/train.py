@@ -1,4 +1,6 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # 只用0,1,2,3号卡
+
 import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -25,10 +27,8 @@ class TripletDataset(Dataset):
         triplets = []
         n = len(self.dataset)
         for i in range(n):
-            # anchor and positive (同一个原图和加密图)
             anchor_idx = i
             positive_idx = i
-            # 多个负样本
             negs = set()
             while len(negs) < self.num_neg:
                 neg_idx = random.randint(0, n-1)
@@ -43,11 +43,8 @@ class TripletDataset(Dataset):
 
     def __getitem__(self, idx):
         anchor_idx, positive_idx, negative_idx = self.triplets[idx]
-        # anchor: 原图
         anchor_img, _, _ = self.dataset[anchor_idx]
-        # positive: 对应加密图
         _, positive_img, _ = self.dataset[positive_idx]
-        # negative: 随机一对不对应的加密图
         _, negative_img, _ = self.dataset[negative_idx]
         return anchor_img, positive_img, negative_img
 
@@ -71,6 +68,9 @@ def main():
     dataloader = DataLoader(triplet_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
     model = SiameseNetworkResNet(embedding_dim=embedding_dim).to(device)
+    if torch.cuda.device_count() > 1:
+        print("Using", torch.cuda.device_count(), "GPUs for DataParallel!")
+        model = torch.nn.DataParallel(model)
     criterion = TripletLoss(margin=1.0)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -82,15 +82,15 @@ def main():
             positive_img = positive_img.to(device)
             negative_img = negative_img.to(device)
             optimizer.zero_grad()
-            anchor_emb = model.forward_once(anchor_img)
-            positive_emb = model.forward_once(positive_img)
-            negative_emb = model.forward_once(negative_img)
+            anchor_emb = model.module.forward_once(anchor_img) if hasattr(model, 'module') else model.forward_once(anchor_img)
+            positive_emb = model.module.forward_once(positive_img) if hasattr(model, 'module') else model.forward_once(positive_img)
+            negative_emb = model.module.forward_once(negative_img) if hasattr(model, 'module') else model.forward_once(negative_img)
             loss = criterion(anchor_emb, positive_emb, negative_emb)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
         print(f"Epoch {epoch+1}, Loss: {total_loss/len(dataloader):.4f}")
-        torch.save(model.state_dict(), f'../../model/model_resnet_triplet_epoch_{epoch}.pth')
+        torch.save(model.state_dict(), f'../../model/model_resnet_triplet_epoch_{epoch+1}.pth')
 
 if __name__ == '__main__':
     main()

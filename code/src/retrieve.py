@@ -1,3 +1,6 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # 只用0,1,2,3号卡
+
 import torch
 from dataset import DRPESiameseDataset
 from siamese_network_resnet import SiameseNetworkResNet
