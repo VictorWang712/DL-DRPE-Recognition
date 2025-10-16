@@ -6,10 +6,10 @@ import torch.nn.functional as F
 class SiameseNetworkResNet(nn.Module):
     def __init__(self, embedding_dim=256):
         super(SiameseNetworkResNet, self).__init__()
-        resnet = models.resnet34(pretrained=True)
-        # 修改第一层卷积以适应单通道输入
+        from torchvision.models import ResNet34_Weights
+        # 推荐用 weights 参数
+        resnet = models.resnet34(weights=ResNet34_Weights.DEFAULT)
         resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        # 去掉最后的全连接层
         self.feature = nn.Sequential(*list(resnet.children())[:-1])  # (batch, 512, 1, 1)
         self.fc = nn.Linear(512, embedding_dim)
 
