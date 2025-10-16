@@ -14,7 +14,7 @@ from datetime import datetime
 def main():
     grey_root = '../../data/grey'
     encrypted_root = '../../data/drpe_encrypted'
-    model_path = '../../model/model_convnext_tiny_triplet_ddp_epoch_100.pth'  # 用你训练好的Triplet模型
+    model_path = '../../model/model_convnext_tiny_triplet_ddp_epoch_50.pth'  # 用你训练好的Triplet模型
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     result_dir = '../../result'
