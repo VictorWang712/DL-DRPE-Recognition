@@ -41,17 +41,20 @@ python train_convnext_ddp.py --gpus 0,1,2,3 --batch_size 16 --epochs 50 --convne
 - `--epochs`: Number of training epochs.
 - `--convnext_variant`: Choose from `tiny`, `small`, `base`, `large`.
 
-The trained models will be saved to the `model/ directory`, e.g., `model/model_convnext_tiny_triplet_ddp_epoch_1.pth`.
+The trained models will be saved to the `model/time/`, e.g., `model/run_20251016_142530/model_convnext_tiny_triplet_ddp_epoch_1.pth`.
 
 ### Retrieval with ConvNeXt Siamese
 
 To perform retrieval (top-1/top-5 accuracy, per-class statistics):
 
-**Run the retrieval script:**
+**Run the retrieval script (example for 50 epochs and ConvNeXt-tiny):**
 
 ```bash
 cd code/src
-python retrieve.py
+python retrieve.py --model_path ../../model/model_convnext_tiny_triplet_ddp_epoch_50.pth --convnext_variant tiny
 ```
+
+- `--model_path`: Path of the model to retrieve.
+- `--convnext_variant`: Choose from `tiny`, `small`, `base`, `large`.
 
 The retrieval results (including per-class accuracy and details) will be saved in the `result/` directory as a JSON file.

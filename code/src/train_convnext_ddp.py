@@ -12,12 +12,15 @@ import torchvision.transforms as transforms
 import random
 import numpy as np
 import argparse
+from datetime import datetime
+
 
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
 
 class TripletDataset(Dataset):
     def __init__(self, dataset, num_neg=5):
@@ -33,7 +36,7 @@ class TripletDataset(Dataset):
             positive_idx = i
             negs = set()
             while len(negs) < self.num_neg:
-                neg_idx = random.randint(0, n-1)
+                neg_idx = random.randint(0, n - 1)
                 if neg_idx != anchor_idx:
                     negs.add(neg_idx)
             for neg_idx in negs:
@@ -50,6 +53,7 @@ class TripletDataset(Dataset):
         _, negative_img, _ = self.dataset[negative_idx]
         return anchor_img, positive_img, negative_img
 
+
 def main_worker(local_rank, world_size, args):
     set_seed()
     torch.cuda.set_device(local_rank)
@@ -63,6 +67,12 @@ def main_worker(local_rank, world_size, args):
     embedding_dim = args.embedding_dim
     convnext_variant = args.convnext_variant
 
+    base_model_dir = '../../model'
+    os.makedirs(base_model_dir, exist_ok=True)
+    run_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+    model_subdir = os.path.join(base_model_dir, f'run_{run_time}')
+    os.makedirs(model_subdir, exist_ok=True)
+
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
         transforms.ToTensor(),
@@ -73,7 +83,11 @@ def main_worker(local_rank, world_size, args):
     sampler = DistributedSampler(triplet_dataset, num_replicas=world_size, rank=local_rank, shuffle=True)
     dataloader = DataLoader(triplet_dataset, batch_size=batch_size, sampler=sampler, num_workers=4, pin_memory=True)
 
-    model = SiameseNetworkConvNeXt(embedding_dim=embedding_dim, convnext_variant=convnext_variant, pretrained=True).cuda(local_rank)
+    model = SiameseNetworkConvNeXt(
+        embedding_dim=embedding_dim,
+        convnext_variant=convnext_variant,
+        pretrained=True
+    ).cuda(local_rank)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
     criterion = TripletLoss(margin=1.0).cuda(local_rank)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
@@ -83,7 +97,11 @@ def main_worker(local_rank, world_size, args):
         sampler.set_epoch(epoch)
         total_loss = 0
         num_batches = 0
-        for anchor_img, positive_img, negative_img in tqdm(dataloader, desc=f"[GPU {local_rank}] Epoch {epoch+1}/{num_epochs}", disable=(local_rank != 0)):
+        for anchor_img, positive_img, negative_img in tqdm(
+            dataloader,
+            desc=f"[GPU {local_rank}] Epoch {epoch + 1}/{num_epochs}",
+            disable=(local_rank != 0)
+        ):
             anchor_img = anchor_img.cuda(local_rank, non_blocking=True)
             positive_img = positive_img.cuda(local_rank, non_blocking=True)
             negative_img = negative_img.cuda(local_rank, non_blocking=True)
@@ -96,12 +114,18 @@ def main_worker(local_rank, world_size, args):
             optimizer.step()
             total_loss += loss.item()
             num_batches += 1
+
         avg_loss = total_loss / num_batches if num_batches > 0 else 0
         if local_rank == 0:
-            print(f"Epoch {epoch+1}, Loss: {avg_loss:.4f}")
-            torch.save(model.module.state_dict(), f'../../model/model_convnext_{convnext_variant}_triplet_ddp_epoch_{epoch+1}.pth')
+            print(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")
+            save_path = os.path.join(
+                model_subdir,
+                f"model_convnext_{convnext_variant}_triplet_ddp_epoch_{epoch + 1}.pth"
+            )
+            torch.save(model.module.state_dict(), save_path)
 
     dist.destroy_process_group()
+
 
 def run_ddp(args):
     # 指定要用的GPU卡号
@@ -110,6 +134,7 @@ def run_ddp(args):
     os.environ['MASTER_PORT'] = '29500'
     world_size = torch.cuda.device_count()
     mp.spawn(main_worker, args=(world_size, args), nprocs=world_size, join=True)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ConvNeXt Siamese DDP Training')
