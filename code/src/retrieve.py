@@ -3,7 +3,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # 只用0,1,2,3号卡
 
 import torch
 from dataset import DRPESiameseDataset
-from siamese_network_resnet import SiameseNetworkResNet
+from siamese_network_convnext import SiameseNetworkConvNeXt
 import torchvision.transforms as transforms
 from tqdm import tqdm
 import os
@@ -14,8 +14,7 @@ from datetime import datetime
 def main():
     grey_root = '../../data/grey'
     encrypted_root = '../../data/drpe_encrypted'
-    model_path = '../../model/model_resnet_triplet_ddp_epoch_100.pth'  # 用你训练好的Triplet模型
-    embedding_dim = 256
+    model_path = '../../model/model_convnext_tiny_triplet_ddp_epoch_100.pth'  # 用你训练好的Triplet模型
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     result_dir = '../../result'
@@ -30,7 +29,9 @@ def main():
     dataset = DRPESiameseDataset(grey_root, encrypted_root, transform)
 
     # 构建所有原图的embedding库
-    model = SiameseNetworkResNet(embedding_dim=embedding_dim).to(device)
+    embedding_dim = 256
+    convnext_variant = 'tiny'  # 或 'base'
+    model = SiameseNetworkConvNeXt(embedding_dim=embedding_dim, convnext_variant=convnext_variant, pretrained=False).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
