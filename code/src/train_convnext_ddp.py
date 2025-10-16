@@ -13,14 +13,13 @@ import random
 import numpy as np
 import argparse
 from datetime import datetime
-
+import json
 
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
 
 class TripletDataset(Dataset):
     def __init__(self, dataset, num_neg=5):
@@ -53,7 +52,6 @@ class TripletDataset(Dataset):
         _, negative_img, _ = self.dataset[negative_idx]
         return anchor_img, positive_img, negative_img
 
-
 def main_worker(local_rank, world_size, args):
     set_seed()
     torch.cuda.set_device(local_rank)
@@ -72,6 +70,15 @@ def main_worker(local_rank, world_size, args):
     run_time = datetime.now().strftime('%Y%m%d_%H%M%S')
     model_subdir = os.path.join(base_model_dir, f'run_{run_time}')
     os.makedirs(model_subdir, exist_ok=True)
+
+    # 日志结构
+    log_dict = {
+        "start_time": run_time,
+        "args": vars(args),
+        "model_subdir": model_subdir,
+        "epoch_logs": []
+    }
+    log_path = os.path.join(model_subdir, "train_log.json")
 
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
@@ -123,18 +130,24 @@ def main_worker(local_rank, world_size, args):
                 f"model_convnext_{convnext_variant}_triplet_ddp_epoch_{epoch + 1}.pth"
             )
             torch.save(model.module.state_dict(), save_path)
+            # 记录日志
+            log_dict["epoch_logs"].append({
+                "epoch": epoch + 1,
+                "loss": avg_loss,
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+            # 每轮都保存一次日志
+            with open(log_path, "w", encoding="utf-8") as f:
+                json.dump(log_dict, f, ensure_ascii=False, indent=2)
 
     dist.destroy_process_group()
 
-
 def run_ddp(args):
-    # 指定要用的GPU卡号
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     world_size = torch.cuda.device_count()
     mp.spawn(main_worker, args=(world_size, args), nprocs=world_size, join=True)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ConvNeXt Siamese DDP Training')
