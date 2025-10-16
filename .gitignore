@@ -1,1 +1,4 @@
 data/
+model/
+result/
+code/src/__pycache__
