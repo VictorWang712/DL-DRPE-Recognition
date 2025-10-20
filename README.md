@@ -1,7 +1,6 @@
 # DL-DRPE-Recognition
 
-A deep learning framework for matching original grayscale images and their encrypted versions using Double Random Phase Encoding (DRPE) and Siamese networks (ResNet/ConvNeXt backbone, Triplet Loss).  
-Supports distributed multi-GPU training and retrieval with top-1/top-5 accuracy evaluation.
+A deep learning framework for matching original grayscale images and their encrypted versions using Double Random Phase Encoding (DRPE) and Siamese networks (ResNet, ConvNeXt, ViT-CLIP). Supports distributed multi-GPU training and retrieval with top-1/top-5 accuracy evaluation.
 
 ## Environment Setup
 
@@ -50,7 +49,32 @@ python drpe_encrypt.py --src_root ../../data/grey --dst_root ../../data/drpe_enc
 
 ## Model Training
 
-Train a Siamese network with a ConvNeXt backbone using distributed data parallel (DDP) and Triplet Loss.
+This project supports three backbone architectures for Siamese retrieval: ResNet34, ConvNeXt, and ViT-CLIP.
+All models use Triplet Loss and support distributed multi-GPU training (DDP).
+
+### ResNet34 Siamese
+
+General Command:
+
+```bash
+python train_resnet_ddp.py --gpus <gpu_ids> --batch_size <batch_size> --epochs <num_epochs> --embedding_dim <dim> --lr <learning_rate>
+```
+
+Parameters:
+
+- `--gpus`: GPUs to use, e.g. "0,1,2,3"
+- `--batch_size`: Batch size per process (default: 16)
+- `--epochs`: Number of training epochs (default: 50)
+- `--embedding_dim`: Embedding dimension (default: 256)
+- `--lr`: Learning rate (default: 1e-4)
+
+Example:
+
+```bash
+python train_resnet_ddp.py --gpus 0,1,2,3 --batch_size 16 --epochs 50 --embedding_dim 256
+```
+
+### ConvNeXt Siamese
 
 General Command:
 
@@ -73,29 +97,95 @@ Example:
 python train_convnext_ddp.py --gpus 0,1,2,3 --batch_size 16 --epochs 50 --convnext_variant tiny
 ```
 
-## Image Retrieval & Evaluation
-
-Evaluate the trained model by retrieving the original image for each encrypted image, and compute top-1/top-5 accuracy.
+### ViT-CLIP Siamese
 
 General Command:
 
 ```bash
-python retrieve.py --model_path <model_checkpoint_path> --convnext_variant <variant> [--cpu]
+python train_vit_clip_ddp.py --gpus <gpu_ids> --batch_size <batch_size> --epochs <num_epochs> --vit_variant <variant> --embedding_dim <dim> --lr <learning_rate>
 ```
 
 Parameters:
 
-- `--model_path`: Path to the trained model checkpoint (e.g., `../../model/run_xxx/model_convnext_tiny_triplet_ddp_epoch_50.pth`)
+- `--gpus`: GPUs to use, e.g. "0,1,2,3"
+- `--batch_size`: Batch size per process (default: 16)
+- `--epochs`: Number of training epochs (default: 50)
+- `--vit_variant`: ViT variant, one of `b_16`, `l_16` (default: `b_16`)
+- `--embedding_dim`: Embedding dimension (default: 256)
+- `--lr`: Learning rate (default: 1e-4)
+
+Example:
+
+```bash
+python train_vit_clip_ddp.py --gpus 0,1,2,3 --batch_size 8 --epochs 50 --vit_variant b_16
+```
+
+## Image Retrieval & Evaluation
+
+Evaluate the trained model by retrieving the original image for each encrypted image, and compute top-1/top-5 accuracy.
+
+Retrieval results (including per-class statistics and detailed matches) are saved as a JSON file in the `../../result/` directory.
+
+### ResNet34 Siamese Retrieval
+
+General Command:
+
+```bash
+python retrieve_resnet.py --model_path <model_checkpoint_path> --embedding_dim <dim> [--cpu]
+```
+
+Parameters:
+
+- `--model_path`: Path to the trained model checkpoint
+- `--embedding_dim`: Embedding dimension used during training (default: 256)
+- `--cpu`: (Optional) Force inference on CPU
+
+Example:
+
+```bash
+python retrieve_resnet.py --model_path ../../model/run_19700101_000000/model_resnet34_triplet_ddp_epoch_50.pth --embedding_dim 256
+```
+
+### ConvNeXt Siamese Retrieval
+
+General Command:
+
+```bash
+python retrieve_convnext.py --model_path <model_checkpoint_path> --convnext_variant <variant> [--cpu]
+```
+
+Parameters:
+
+- `--model_path`: Path to the trained model checkpoint
 - `--convnext_variant`: ConvNeXt variant used during training (`tiny`, `small`, `base`, `large`)
 - `--cpu`: (Optional) Force inference on CPU
 
 Example:
 
 ```bash
-python retrieve.py --model_path ../../model/run_20251016_000000/model_convnext_base_triplet_ddp_epoch_50.pth --convnext_variant base
+python retrieve_convnext.py --model_path ../../model/run_19700101_000000/model_convnext_base_triplet_ddp_epoch_50.pth --convnext_variant tiny
 ```
 
-Retrieval results (including per-class statistics and detailed matches) are saved as a JSON file in the `../../result/` directory.
+### ViT-CLIP Siamese Retrieval
+
+General Command:
+
+```bash
+python retrieve_vit_clip.py --model_path <model_checkpoint_path> --vit_variant <variant> --embedding_dim <dim> [--cpu]
+```
+
+Parameters:
+
+- `--model_path`: Path to the trained model checkpoint
+- `--vit_variant`: ViT variant used during training, one of `b_16`, `l_16` (default: `b_16`)
+- `--embedding_dim`: Embedding dimension used during training (default: 256)
+- `--cpu`: (Optional) Force inference on CPU
+
+Example:
+
+```bash
+python retrieve_vit_clip.py --model_path ../../model/run_19700101_000000/model_vit_clip_b_16_triplet_ddp_epoch_50.pth --vit_variant b_16 --embedding_dim 256
+```
 
 ## Results
 
@@ -105,5 +195,3 @@ The retrieval script reports:
 - Top-5 Accuracy: Percentage where the correct original is among the 5 closest matches.
 - Per-class statistics: Accuracy for each class/category.
 - Detailed results: For each encrypted image, the top-5 matches and correctness.
-
-Results are saved in a JSON file, e.g., `../../result/retrieve_result_20251016_000000.json`.
