@@ -1,7 +1,9 @@
+# code/src/retrieve_resnet.py
+
 import os
 import torch
 from dataset import DRPESiameseDataset
-from siamese_network_convnext import SiameseNetworkConvNeXt
+from siamese_network_resnet import SiameseNetworkResNet
 import torchvision.transforms as transforms
 from tqdm import tqdm
 import json
@@ -9,37 +11,27 @@ from collections import defaultdict
 from datetime import datetime
 import argparse
 
-
 def main(args):
     grey_root = '../../data/grey'
     encrypted_root = '../../data/drpe_encrypted'
-
-    # 从命令行读取参数
     model_path = args.model_path
-    convnext_variant = args.convnext_variant
+    embedding_dim = args.embedding_dim
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
     result_dir = '../../result'
     os.makedirs(result_dir, exist_ok=True)
     now_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-    result_json = os.path.join(result_dir, f'retrieve_result_{now_str}.json')
+    result_json = os.path.join(result_dir, f'retrieve_resnet34_{now_str}.json')
 
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
         transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5])
     ])
     dataset = DRPESiameseDataset(grey_root, encrypted_root, transform)
 
-    # 构建模型
-    embedding_dim = 256
-    model = SiameseNetworkConvNeXt(
-        embedding_dim=embedding_dim,
-        convnext_variant=convnext_variant,
-        pretrained=False
-    ).to(device)
-
-    # 加载权重
-    print(f"正在加载模型: {model_path}")
+    model = SiameseNetworkResNet(embedding_dim=embedding_dim).to(device)
+    print(f"Loading model: {model_path}")
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
@@ -52,11 +44,14 @@ def main(args):
             grey_img = grey_img.unsqueeze(0).to(device)
             emb = model.forward_once(grey_img)
             grey_embeddings.append(emb.cpu())
-            grey_names.append(name)
-            grey_classes.append(get_class_from_path(dataset.pairs[i][0]))
+            # 获取类别和图片名，拼成 folder/image_xxxx.jpg
+            folder = get_class_from_path(dataset.pairs[i][0])
+            img_name = os.path.basename(dataset.pairs[i][0])
+            full_name = f"{folder}/{img_name}"
+            grey_names.append(full_name)
+            grey_classes.append(folder)
     grey_embeddings = torch.cat(grey_embeddings, dim=0)  # (N, D)
 
-    # 检索测试
     top1_correct = 0
     top5_correct = 0
     total = 0
@@ -76,12 +71,11 @@ def main(args):
             top5_names = [grey_names[i] for i in top5_indices]
             match_name = grey_names[sorted_indices[0]]
 
-            if enc_name.endswith('_mag.png'):
-                true_name = enc_name.replace('_mag.png', '.jpg')
-            else:
-                true_name = enc_name
-
-            true_class = get_class_from_path(dataset.pairs[idx][0])
+            # 获取当前加密图片的类别和图片名，拼成 folder/image_xxxx.jpg
+            folder = get_class_from_path(dataset.pairs[idx][0])
+            img_name = os.path.basename(dataset.pairs[idx][0])
+            true_name = f"{folder}/{img_name}"
+            true_class = folder
 
             is_top1 = (match_name == true_name)
             is_top5 = (true_name in top5_names)
@@ -122,7 +116,12 @@ def main(args):
         'Top1Accuracy': top1_acc,
         'Top5Accuracy': top5_acc,
         'PerClass': per_class_stats,
-        'Total': total
+        'Total': total,
+        'ModelInfo': {
+            'ModelPath': os.path.abspath(model_path),
+            'EmbeddingDim': embedding_dim,
+            'RetrieveTime': now_str
+        }
     }
 
     with open(result_json, 'w', encoding='utf-8') as f:
@@ -133,17 +132,16 @@ def main(args):
 
     print(f"\nTop-1 Accuracy: {top1_acc:.4f}")
     print(f"Top-5 Accuracy: {top5_acc:.4f}")
-    print(f"详细检索结果已保存至: {result_json}")
-
+    print(f"Detailed results saved to: {result_json}")
+    print(f"Model used: {os.path.abspath(model_path)}")
 
 def get_class_from_path(path):
     return os.path.basename(os.path.dirname(path))
 
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DRPE Siamese Retrieval (ConvNeXt)')
-    parser.add_argument('--model_path', type=str, required=True, help='模型文件路径，例如 ../../model/run_xxx/model_convnext_tiny_triplet_ddp_epoch_50.pth')
-    parser.add_argument('--convnext_variant', type=str, default='tiny', choices=['tiny', 'small', 'base', 'large'], help='ConvNeXt 变体')
-    parser.add_argument('--cpu', action='store_true', help='强制使用CPU推理')
+    parser = argparse.ArgumentParser(description='ResNet34 Siamese Retrieval')
+    parser.add_argument('--model_path', type=str, required=True, help='Path to model checkpoint')
+    parser.add_argument('--embedding_dim', type=int, default=256)
+    parser.add_argument('--cpu', action='store_true', help='Force CPU inference')
     args = parser.parse_args()
     main(args)
