@@ -3,43 +3,33 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-def drpe_encrypt(img_array, phase1, phase2):
-    # img_array: 输入灰度图像，归一化到[0,1]
-    # phase1, phase2: 两个随机相位矩阵
-    # 1. 空间域相位调制
-    img_mod = img_array * np.exp(1j * phase1)
-    # 2. 傅里叶变换
-    img_fft = np.fft.fft2(img_mod)
-    # 3. 频域相位调制
-    img_fft_mod = img_fft * np.exp(1j * phase2)
-    # 4. 逆傅里叶变换
-    encrypted = np.fft.ifft2(img_fft_mod)
-    # 返回复数密文
-    return encrypted
+def drpe_encrypt(img_array, phase1, phase2):  # Encrypts an image using DRPE algorithm 
+    img_mod = img_array * np.exp(1j * phase1)  # Modulate image with spatial phase mask 
+    img_fft = np.fft.fft2(img_mod)  # Apply 2D Fourier transform to modulated image 
+    img_fft_mod = img_fft * np.exp(1j * phase2)  # Modulate Fourier spectrum with frequency phase mask 
+    encrypted = np.fft.ifft2(img_fft_mod)  # Apply inverse Fourier transform to get encrypted image 
+    return encrypted  # Return the complex-valued encrypted image 
 
-def save_encrypted_image(enc_img, save_path):
-    # 保存密文为npy文件
-    np.save(save_path, enc_img)
+def save_encrypted_image(enc_img, save_path):  # Saves encrypted image as a .npy file 
+    np.save(save_path, enc_img)  # Save the numpy array to disk 
 
-def save_visualization(enc_img, save_path_prefix):
-    # 幅值（模）归一化到[0,255]保存为PNG
-    mag = np.abs(enc_img)
-    mag = (mag / mag.max() * 255).astype(np.uint8)
-    Image.fromarray(mag).save(save_path_prefix + '_mag.png')
+def save_visualization(enc_img, save_path_prefix):  # Save magnitude and phase visualizations 
+    mag = np.abs(enc_img)  # Compute magnitude of encrypted image 
+    mag = (mag / mag.max() * 255).astype(np.uint8)  # Normalize magnitude to [0,255] and convert to uint8 
+    Image.fromarray(mag).save(save_path_prefix + '_mag.png')  # Save magnitude as PNG image 
 
-    # 相位归一化到[0,255]保存为PNG
-    phase = np.angle(enc_img)
-    phase = ((phase + np.pi) / (2 * np.pi) * 255).astype(np.uint8)
-    # Image.fromarray(phase).save(save_path_prefix + '_phase.png')
+    phase = np.angle(enc_img)  # Compute phase of encrypted image 
+    phase = ((phase + np.pi) / (2 * np.pi) * 255).astype(np.uint8)  # Normalize phase to [0,255] 
+    # Image.fromarray(phase).save(save_path_prefix + '_phase.png')  # (Commented out) Save phase as PNG image 
 
-def load_image(img_path):
-    img = Image.open(img_path).convert('L')
-    img = np.array(img, dtype=np.float32) / 255.0
-    return img
+def load_image(img_path):  # Loads an image and converts it to normalized grayscale array 
+    img = Image.open(img_path).convert('L')  # Open image and convert to grayscale 
+    img = np.array(img, dtype=np.float32) / 255.0  # Normalize pixel values to [0,1] 
+    return img  # Return normalized image array 
 
-def generate_phase(shape, seed=None):
-    rng = np.random.default_rng(seed)
-    return rng.uniform(0, 2 * np.pi, size=shape)
+def generate_phase(shape, seed=None):  # Generates a random phase mask 
+    rng = np.random.default_rng(seed)  # Initialize random number generator with seed 
+    return rng.uniform(0, 2 * np.pi, size=shape)  # Generate random values in [0, 2pi) 
 
 def main(
     src_root = '../../data/128px_grey',
@@ -47,41 +37,38 @@ def main(
     phase1_seed = 42,
     phase2_seed = 123
 ):
-    src_root = os.path.abspath(os.path.join(os.path.dirname(__file__), src_root))
-    dst_root = os.path.abspath(os.path.join(os.path.dirname(__file__), dst_root))
-    if not os.path.exists(dst_root):
-        os.makedirs(dst_root)
+    src_root = os.path.abspath(os.path.join(os.path.dirname(__file__), src_root))  # Get absolute path for source root 
+    dst_root = os.path.abspath(os.path.join(os.path.dirname(__file__), dst_root))  # Get absolute path for destination root 
+    if not os.path.exists(dst_root):  # Check if destination directory exists 
+        os.makedirs(dst_root)  # Create destination directory if it does not exist 
 
-    # 预生成相位掩模（假设所有图片尺寸一致）
-    sample_class = os.listdir(src_root)[0]
-    sample_img_path = os.path.join(src_root, sample_class, os.listdir(os.path.join(src_root, sample_class))[0])
-    img_shape = load_image(sample_img_path).shape
-    phase1 = generate_phase(img_shape, phase1_seed)
-    phase2 = generate_phase(img_shape, phase2_seed)
+    sample_class = os.listdir(src_root)[0]  # Get the first class folder name 
+    sample_img_path = os.path.join(src_root, sample_class, os.listdir(os.path.join(src_root, sample_class))[0])  # Get a sample image path 
+    img_shape = load_image(sample_img_path).shape  # Load sample image to determine shape 
+    phase1 = generate_phase(img_shape, phase1_seed)  # Generate first random phase mask 
+    phase2 = generate_phase(img_shape, phase2_seed)  # Generate second random phase mask 
 
-    # 保存相位掩模，方便解密
-    np.save(os.path.join(dst_root, 'phase1.npy'), phase1)
-    np.save(os.path.join(dst_root, 'phase2.npy'), phase2)
+    np.save(os.path.join(dst_root, 'phase1.npy'), phase1)  # Save first phase mask for decryption 
+    np.save(os.path.join(dst_root, 'phase2.npy'), phase2)  # Save second phase mask for decryption 
 
-    for cls in tqdm(os.listdir(src_root), desc='Classes'):
-        src_cls_dir = os.path.join(src_root, cls)
-        dst_cls_dir = os.path.join(dst_root, cls)
-        if not os.path.isdir(src_cls_dir):
-            continue
-        if not os.path.exists(dst_cls_dir):
-            os.makedirs(dst_cls_dir)
-        for fname in tqdm(os.listdir(src_cls_dir), desc=cls, leave=False):
-            if not fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')):
-                continue
-            src_img_path = os.path.join(src_cls_dir, fname)
-            dst_img_path = os.path.join(dst_cls_dir, fname + '.npy')
-            img = load_image(src_img_path)
-            enc_img = drpe_encrypt(img, phase1, phase2)
-            # save_encrypted_image(enc_img, dst_img_path)
+    for cls in tqdm(os.listdir(src_root), desc='Classes'):  # Iterate over class folders 
+        src_cls_dir = os.path.join(src_root, cls)  # Source directory for current class 
+        dst_cls_dir = os.path.join(dst_root, cls)  # Destination directory for current class 
+        if not os.path.isdir(src_cls_dir):  # Skip if not a directory 
+            continue  # Continue to next class 
+        if not os.path.exists(dst_cls_dir):  # Check if destination class directory exists 
+            os.makedirs(dst_cls_dir)  # Create destination class directory if needed 
+        for fname in tqdm(os.listdir(src_cls_dir), desc=cls, leave=False):  # Iterate over files in class 
+            if not fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')):  # Skip non-image files 
+                continue  # Continue to next file 
+            src_img_path = os.path.join(src_cls_dir, fname)  # Path to source image 
+            dst_img_path = os.path.join(dst_cls_dir, fname + '.npy')  # Path to save encrypted image 
+            img = load_image(src_img_path)  # Load and normalize image 
+            enc_img = drpe_encrypt(img, phase1, phase2)  # Encrypt image using DRPE 
+            # save_encrypted_image(enc_img, dst_img_path)  # (Commented out) Save encrypted image as .npy 
 
-            # 保存可视化图片
-            save_path_prefix = os.path.join(dst_cls_dir, fname)
-            save_visualization(enc_img, save_path_prefix)
+            save_path_prefix = os.path.join(dst_cls_dir, fname)  # Prefix for visualization files 
+            save_visualization(enc_img, save_path_prefix)  # Save magnitude visualization 
 
 if __name__ == '__main__':
     import argparse

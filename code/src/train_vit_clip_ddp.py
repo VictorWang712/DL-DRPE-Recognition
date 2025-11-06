@@ -15,101 +15,101 @@ import argparse
 from datetime import datetime
 import json
 
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+def set_seed(seed=42):  # Set random seed for reproducibility 
+    random.seed(seed)  # Set Python random seed 
+    np.random.seed(seed)  # Set NumPy random seed 
+    torch.manual_seed(seed)  # Set PyTorch CPU seed 
+    torch.cuda.manual_seed_all(seed)  # Set PyTorch CUDA seed 
 
-def main_worker(local_rank, world_size, args):
-    set_seed()
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=local_rank)
+def main_worker(local_rank, world_size, args):  # Main worker for each process 
+    set_seed()  # Ensure deterministic behavior 
+    torch.cuda.set_device(local_rank)  # Set current CUDA device 
+    dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=local_rank)  # Initialize distributed training 
 
-    grey_root = '../../data/grey'
-    encrypted_root = '../../data/drpe_encrypted'
-    batch_size = args.batch_size
-    num_epochs = args.epochs
-    lr = args.lr
-    embedding_dim = args.embedding_dim
-    vit_variant = args.vit_variant
+    grey_root = '../../data/grey'  # Path to grayscale images 
+    encrypted_root = '../../data/drpe_encrypted'  # Path to encrypted images 
+    batch_size = args.batch_size  # Batch size per GPU 
+    num_epochs = args.epochs  # Number of training epochs 
+    lr = args.lr  # Learning rate 
+    embedding_dim = args.embedding_dim  # Embedding dimension 
+    vit_variant = args.vit_variant  # ViT variant to use 
 
-    base_model_dir = '../../model'
-    os.makedirs(base_model_dir, exist_ok=True)
-    run_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-    model_subdir = os.path.join(base_model_dir, f'run_{run_time}')
-    os.makedirs(model_subdir, exist_ok=True)
+    base_model_dir = '../../model'  # Directory to save models 
+    os.makedirs(base_model_dir, exist_ok=True)  # Create directory if not exists 
+    run_time = datetime.now().strftime('%Y%m%d_%H%M%S')  # Timestamp for this run 
+    model_subdir = os.path.join(base_model_dir, f'run_{run_time}')  # Subdirectory for this run 
+    os.makedirs(model_subdir, exist_ok=True)  # Create run subdirectory 
 
-    log_dict = {
-        "start_time": run_time,
-        "args": vars(args),
-        "model_subdir": model_subdir,
-        "epoch_logs": []
+    log_dict = {  # Dictionary to store training logs 
+        "start_time": run_time,  # Training start time 
+        "args": vars(args),  # Training arguments 
+        "model_subdir": model_subdir,  # Model directory 
+        "epoch_logs": []  # List to store per-epoch logs 
     }
-    log_path = os.path.join(model_subdir, "train_log.json")
+    log_path = os.path.join(model_subdir, "train_log.json")  # Path to save log file 
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # ViT默认224
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5], std=[0.5])
+    transform = transforms.Compose([  # Compose image transformations 
+        transforms.Resize((224, 224)),  # Resize images to 224x224 for ViT 
+        transforms.ToTensor(),  # Convert images to tensor 
+        transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize images 
     ])
-    dataset = DRPESiameseDataset(grey_root, encrypted_root, transform)
-    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=local_rank, shuffle=True)
-    dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=4, pin_memory=True)
+    dataset = DRPESiameseDataset(grey_root, encrypted_root, transform)  # Create dataset 
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=local_rank, shuffle=True)  # Distributed sampler for data 
+    dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=4, pin_memory=True)  # DataLoader with distributed sampler 
 
-    model = DualViTCLIP(
-        embedding_dim=embedding_dim,
-        vit_variant=vit_variant,
-        pretrained=True
-    ).cuda(local_rank)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
-    criterion = InfoNCELoss(temperature=0.07).cuda(local_rank)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
+    model = DualViTCLIP(  # Instantiate dual ViT-CLIP model 
+        embedding_dim=embedding_dim,  # Set embedding dimension 
+        vit_variant=vit_variant,  # Set ViT variant 
+        pretrained=True  # Use pretrained weights 
+    ).cuda(local_rank)  # Move model to current GPU 
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])  # Wrap model for DDP 
+    criterion = InfoNCELoss(temperature=0.07).cuda(local_rank)  # InfoNCE loss for contrastive learning 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)  # AdamW optimizer 
 
-    for epoch in range(num_epochs):
-        model.train()
-        sampler.set_epoch(epoch)
-        total_loss = 0
-        num_batches = 0
-        for grey_img, enc_img, _ in tqdm(
+    for epoch in range(num_epochs):  # Loop over epochs 
+        model.train()  # Set model to training mode 
+        sampler.set_epoch(epoch)  # Shuffle data differently at each epoch 
+        total_loss = 0  # Track total loss for this epoch 
+        num_batches = 0  # Track number of batches 
+        for grey_img, enc_img, _ in tqdm(  # Iterate over batches 
             dataloader,
-            desc=f"[GPU {local_rank}] Epoch {epoch + 1}/{num_epochs}",
-            disable=(local_rank != 0)
+            desc=f"[GPU {local_rank}] Epoch {epoch + 1}/{num_epochs}",  # Progress bar description 
+            disable=(local_rank != 0)  # Only show progress bar on rank 0 
         ):
-            grey_img = grey_img.cuda(local_rank, non_blocking=True)
-            enc_img = enc_img.cuda(local_rank, non_blocking=True)
-            optimizer.zero_grad()
-            z_grey, z_enc = model(grey_img, enc_img)
-            loss = criterion(z_grey, z_enc)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            num_batches += 1
+            grey_img = grey_img.cuda(local_rank, non_blocking=True)  # Move grey images to GPU 
+            enc_img = enc_img.cuda(local_rank, non_blocking=True)  # Move encrypted images to GPU 
+            optimizer.zero_grad()  # Zero gradients 
+            z_grey, z_enc = model(grey_img, enc_img)  # Forward pass through model 
+            loss = criterion(z_grey, z_enc)  # Compute InfoNCE loss 
+            loss.backward()  # Backpropagate loss 
+            optimizer.step()  # Update model parameters 
+            total_loss += loss.item()  # Accumulate loss 
+            num_batches += 1  # Increment batch count 
 
-        avg_loss = total_loss / num_batches if num_batches > 0 else 0
-        if local_rank == 0:
-            print(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")
-            save_path = os.path.join(
+        avg_loss = total_loss / num_batches if num_batches > 0 else 0  # Compute average loss 
+        if local_rank == 0:  # Only on main process 
+            print(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")  # Print epoch loss 
+            save_path = os.path.join(  # Path to save model checkpoint 
                 model_subdir,
                 f"model_vit_clip_{vit_variant}_ddp_epoch_{epoch + 1}.pth"
             )
-            torch.save(model.module.state_dict(), save_path)
-            log_dict["epoch_logs"].append({
-                "epoch": epoch + 1,
-                "loss": avg_loss,
-                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            torch.save(model.module.state_dict(), save_path)  # Save model weights 
+            log_dict["epoch_logs"].append({  # Log epoch statistics 
+                "epoch": epoch + 1,  # Current epoch 
+                "loss": avg_loss,  # Average loss 
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Timestamp for epoch 
             })
-            with open(log_path, "w", encoding="utf-8") as f:
-                json.dump(log_dict, f, ensure_ascii=False, indent=2)
+            with open(log_path, "w", encoding="utf-8") as f:  # Open log file 
+                json.dump(log_dict, f, ensure_ascii=False, indent=2)  # Write log to file 
 
-    dist.destroy_process_group()
+    dist.destroy_process_group()  # Clean up distributed training resources 
 
-def run_ddp(args):
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29500'
-    world_size = torch.cuda.device_count()
-    mp.spawn(main_worker, args=(world_size, args), nprocs=world_size, join=True)
+def run_ddp(args):  # Launch distributed training 
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus  # Set visible GPUs 
+    os.environ['MASTER_ADDR'] = '127.0.0.1'  # Set master address for DDP 
+    os.environ['MASTER_PORT'] = '29500'  # Set master port for DDP 
+    world_size = torch.cuda.device_count()  # Number of GPUs to use 
+    mp.spawn(main_worker, args=(world_size, args), nprocs=world_size, join=True)  # Spawn processes for each GPU 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ViT-CLIP Dual Encoder DDP Training')

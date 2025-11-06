@@ -1,47 +1,42 @@
 import os
 from PIL import Image
 
-# 源数据文件夹和目标文件夹
-SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/raw'))
-DST_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/grey'))
+SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/raw')) # Get absolute path of source directory 
+DST_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/grey')) # Get absolute path of destination directory 
 
-def process_image(src_path, dst_path):
+def process_image(src_path, dst_path): # Process a single image from source to destination 
     try:
-        img = Image.open(src_path)
-        # 等比例缩放，短边=128
-        w, h = img.size
-        if w < h:
-            new_w = 128
-            new_h = int(h * (128 / w))
-        else:
-            new_h = 128
-            new_w = int(w * (128 / h))
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-        # 从左上角裁剪128x128
-        img = img.crop((0, 0, 128, 128))
-        # 转为灰度
-        img = img.convert('L')
-        # 保存
-        img.save(dst_path)
-    except Exception as e:
-        print(f"处理图片 {src_path} 时出错: {e}")
+        img = Image.open(src_path) # Open the image file 
+        w, h = img.size # Get width and height of the image 
+        if w < h: # If width is less than height 
+            new_w = 128 # Set new width to 128 
+            new_h = int(h * (128 / w)) # Calculate new height to maintain aspect ratio 
+        else: # If height is less than or equal to width 
+            new_h = 128 # Set new height to 128 
+            new_w = int(w * (128 / h)) # Calculate new width to maintain aspect ratio 
+        img = img.resize((new_w, new_h), Image.LANCZOS) # Resize image with high-quality downsampling 
+        img = img.crop((0, 0, 128, 128)) # Crop the image from top-left to 128x128 
+        img = img.convert('L') # Convert image to grayscale 
+        img.save(dst_path) # Save the processed image to destination 
+    except Exception as e: # Handle any exception during processing 
+        print(f"An error occurred while processing the image {src_path}: {e}") # Print error message if exception occurs 
 
-def process_folder(src_folder, dst_folder):
-    if not os.path.exists(dst_folder):
-        os.makedirs(dst_folder)
-    for fname in os.listdir(src_folder):
-        src_path = os.path.join(src_folder, fname)
-        dst_path = os.path.join(dst_folder, fname)
-        if os.path.isfile(src_path) and fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')):
-            process_image(src_path, dst_path)
+def process_folder(src_folder, dst_folder): # Process all images in a folder 
+    if not os.path.exists(dst_folder): # If destination folder does not exist 
+        os.makedirs(dst_folder) # Create the destination folder 
+    for fname in os.listdir(src_folder): # Iterate over all files in the source folder 
+        src_path = os.path.join(src_folder, fname) # Get full path of source file 
+        dst_path = os.path.join(dst_folder, fname) # Get full path of destination file 
+        if os.path.isfile(src_path) and fname.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')): # Check if file is an image 
+            process_image(src_path, dst_path) # Process the image file 
 
 def main():
-    for subdir in os.listdir(SRC_ROOT):
-        src_subdir = os.path.join(SRC_ROOT, subdir)
-        dst_subdir = os.path.join(DST_ROOT, subdir)
-        if os.path.isdir(src_subdir):
-            print(f"处理文件夹: {subdir}")
-            process_folder(src_subdir, dst_subdir)
+    for subdir in os.listdir(SRC_ROOT): # Iterate over all subdirectories in source root 
+        src_subdir = os.path.join(SRC_ROOT, subdir) # Get full path of source subdirectory 
+        dst_subdir = os.path.join(DST_ROOT, subdir) # Get full path of destination subdirectory 
+        if os.path.isdir(src_subdir): # Check if source subdirectory is a directory 
+            print(f"Processing Folder: {subdir}") # Print the name of the folder being processed 
+            process_folder(src_subdir, dst_subdir) # Process all images in the subdirectory 
 
 if __name__ == '__main__':
     main()
